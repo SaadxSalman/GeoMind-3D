@@ -45,9 +45,6 @@ Data-Processing/
 │── pandas/                # Pandas DataFrame operations
 │── polars/                # Polars for high-performance data processing
 │── spark/                 # Apache Spark for big data analytics
-│── optimization/          # Performance optimization techniques
-│── datasets/              # Sample datasets for practice
-│── notebooks/             # Jupyter Notebooks with examples
 │── README.md              # Documentation
 └── requirements.txt       # Python dependencies
 ```
