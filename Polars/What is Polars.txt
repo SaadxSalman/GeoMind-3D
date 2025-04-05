@@ -1,1 +1,0 @@
-A fast DataFrame library designed for speed and performance, especially for handling large datasets in-memory.

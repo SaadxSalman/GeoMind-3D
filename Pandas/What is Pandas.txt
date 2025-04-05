@@ -1,1 +1,0 @@
-A Python library for data manipulation and analysis, especially for smaller to medium-sized datasets.
