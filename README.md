@@ -54,12 +54,3 @@ Run the main executable to start the Lexi-Agent server. You can then interact wi
 
 -----
 
-## 🤝 Contributing
-
-We welcome contributions from legal and AI professionals alike. If you are interested in contributing to this private, secure platform, please review the [CONTRIBUTING.md](https://www.google.com/search?q=https://github.com/saadsalmanakram/Lexi-Agent/blob/main/CONTRIBUTING.md) file.
-
------
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](https://www.google.com/search?q=https://github.com/saadsalmanakram/Lexi-Agent/blob/main/LICENSE) file for details.
