@@ -16,10 +16,13 @@ A private, on-premise AI assistant designed for legal professionals. Lexi-Agent 
 
 ## ⚙️ Tech Stack
 
-  * **Core Logic:** Rust
-  * **Local Database:** LanceDB
-  * **Legal Reasoning Model:** Gemma-2 or a similarly capable open-source model
-  * **Vector Search:** LanceDB's built-in capabilities
+* **Frontend:** Next.js (MERN) with TypeScript & Tailwind CSS
+* **Backend:** Node.js & Express.js
+* **Database:** MongoDB (for user/session management)
+* **Core Logic:** Rust
+* **Local Vector Database:** LanceDB
+* **Legal Reasoning Model:** Gemma-2
+* **Vector Search:** LanceDB's built-in capabilities
 
 -----
 
