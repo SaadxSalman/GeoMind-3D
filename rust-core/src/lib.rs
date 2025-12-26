@@ -7,6 +7,7 @@ use arrow_array::{RecordBatch, StringArray, FixedSizeListArray, Float32Array};
 use arrow_schema::{DataType, Field, Schema};
 use candle_core::{Device, Tensor};
 use candle_transformers::models::gemma2::{Config, Model};
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 
 #[napi]
 pub fn analyze_legal_document(content: String) -> String {
@@ -90,4 +91,20 @@ pub async fn generate_legal_draft(prompt: String) -> Result<String, napi::Error>
     );
 
     Ok(response)
+}
+
+#[napi]
+pub fn stream_draft(prompt: String, callback: ThreadsafeFunction<String>) {
+    // In a real scenario, this is where your Gemma-2 loop lives
+    std::thread::spawn(move || {
+        let words = vec!["This", " agreement", " is", " made", " on", " this", " day..."];
+        
+        for word in words {
+            // Simulate model inference delay
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            
+            // Push token to the Node.js callback
+            callback.call(Ok(word.to_string()), ThreadsafeFunctionCallMode::Blocking);
+        }
+    });
 }
