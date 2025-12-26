@@ -25,3 +25,25 @@ export const generateDraft = async (req: any, res: any) => {
         res.status(500).json({ error: "Sovereign Engine Error" });
     }
 };
+
+export const streamDraft = (req, res) => {
+    const { prompt } = req.body;
+
+    // SSE Headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    // Create the callback that Rust will trigger
+    const callback = (err, token) => {
+        if (err) {
+            res.write(`data: [ERROR]\n\n`);
+            return res.end();
+        }
+        // Send token to frontend in SSE format
+        res.write(`data: ${token}\n\n`);
+    };
+
+    // Trigger the Rust streaming function
+    rustCore.streamDraft(prompt, callback);
+};

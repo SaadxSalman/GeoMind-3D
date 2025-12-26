@@ -11,21 +11,31 @@ export default function ChatPage() {
   const [isUploading, setIsUploading] = useState(false);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
-    
-    const userMsg = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
+    const response = await fetch('http://localhost:5000/api/agent/stream-draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: input }),
+    });
 
-    try {
-      // Direct call to your Express backend
-      const { data } = await axios.post('http://localhost:5000/api/agent/draft', {
-        prompt: input
-      });
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedText = "";
+
+    while (true) {
+      const { done, value } = await reader!.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      // SSE sends data prefixed with "data: ", we clean it up:
+      const token = chunk.replace(/data: /g, "").replace(/\n\n/g, "");
       
-      setMessages(prev => [...prev, { role: 'assistant', content: data.analysis }]);
-    } catch (error) {
-      console.error("Agent Error:", error);
+      accumulatedText += token;
+      // Update the last message in the state with the new text
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1].content = accumulatedText;
+        return updated;
+      });
     }
   };
 
