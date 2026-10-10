@@ -1,0 +1,55 @@
+# ═══════════════════════════════════════════════════════════
+# GeoMind-3D — Git ignore rules
+# CRITICAL: the master .env (all secrets/keys) must NEVER be
+# pushed to GitHub.
+# ═══════════════════════════════════════════════════════════
+
+# ── Secrets ──
+.env
+.env.*
+!.env.example
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+__pypackages__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Runtime artifacts (generated scenes, meshes, indexes, DBs) ──
+artifacts/
+*.db
+*.sqlite
+*.sqlite3
+*.npz
+!backend/**/*.npz
+
+# ── Node / frontend ──
+node_modules/
+frontend/dist/
+.npm
+
+# ── IDE / OS ──
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Logs / temp ──
+*.log
+npm-debug.log*
+pip-debug.log*
+tmp/
+temp/
