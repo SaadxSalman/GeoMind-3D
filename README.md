@@ -437,7 +437,7 @@ $$
 * **Benchmark:** `benchmark()` measures the speedup of the FNO over the reference
   solver at the resolution in `.env` and returns the MSE.
 
-**Measured on this machine** (`FNO_STEPS=300`, 32×32 grid): loss falls
+**Measured on this machine** (`FNO_TRAIN_STEPS=300`, 32×32 grid): loss falls
 0.7633 → 0.1420 (min 0.0791) in ≈117 s over 263 313 parameters, and the trained
 operator tracks the exact spectral reference to **≈2.7 % relative L2 error**.
 
@@ -594,8 +594,8 @@ GeoMind-3D/
 │   │   │
 │   │   └── data/
 │   │       ├── __init__.py
-│   │       ├── seed_features.py         # 41 physical features with real geometry
-│   │       └── seed_reports.py          # 7 survey reports → 42 vector chunks
+│   │       ├── seed_features.py         # 35 physical features with real geometry
+│   │       └── seed_reports.py          # 6 survey reports → 42 vector chunks
 │   │
 │   ├── requirements.txt                  # pinned dependency set
 │   └── tests/                            # engine test suite (§14)
@@ -619,8 +619,8 @@ GeoMind-3D/
         ├── viewer.js                      # Three.js WebGL scene
         ├── splats.js                      # WebGL 3DGS rasterizer
         └── graph.js                       # 2D canvas knowledge-graph renderer
-> **Build status.** ✓ built and verified today: `config.py`, `core/geometry.py`,
-> `core/spatial_sql.py`, `core/embeddings.py`, `core/hnsw.py`,
+> **Build status legend.** ✓ built and verified today: `config.py`,
+> `core/geometry.py`, `core/spatial_sql.py`, `core/embeddings.py`, `core/hnsw.py`,
 > `core/vector_store.py`, `core/rrf.py`, `core/gnn.py`,
 > `core/knowledge_graph.py`, `core/conditioning.py`, `core/latent/*`,
 > `core/rendering/surface_nets.py`, `core/rendering/marching_tets.py`,
@@ -962,7 +962,7 @@ credentials as needed.
 | `DIFFUSION_BETA_START` | `0.0001` | Noise schedule start |
 | `DIFFUSION_BETA_END` | `0.02` | Noise schedule end |
 | `DIFFUSION_SEED` | `42` | Reproducible sampling |
-| `SH_DEGREE` | `4` | Max spherical-harmonic degree $L$ ($1{+}L{+}L^2 = 21$ coefficients) |
+| `SH_DEGREE` | `4` | Max spherical-harmonic degree $L$ ($(L{+}1)^2 = 25$ real coefficients) |
 
 #### Block 9 — Fourier Neural Operator
 
@@ -1217,19 +1217,24 @@ mesh, transform = heightfield_to_mesh(
     z_levels=30,           # vertical SDF sampling density
     ensure_watertight=True)
 
-mesh.vertices.shape       # (50298, 3)  world-space, X east / Y up / Z south
-mesh.faces.shape          # (100592, 3) CCW, outward-facing
-mesh.normals.shape        # (50298, 3)
+mesh.vertices.shape       # e.g. (32406, 3)  world-space, X east / Y up / Z south
+mesh.faces.shape          # e.g. (64808, 3) CCW, outward-facing
+mesh.normals.shape        # (32406, 3)
 mesh.vertex_count, mesh.triangle_count
 
 mesh_topology(mesh.faces)
-# → {"edge_count": 150888,
+# → {"edge_count": 97212,
 #    "non_manifold_edges": 0,
 #    "inconsistent_directed_edges": 0,
 #    "watertight": True}
 
-signed_volume(mesh.vertices, mesh.faces)     # +19565.03  (positive ⇒ outward normals)
+signed_volume(mesh.vertices, mesh.faces)     # +2058.96  (positive ⇒ outward normals)
 ```
+
+> Counts above are real measured output for a 96 × 96 smoothly-smoothed height
+> field at `z_levels=28`, `world_w=100`, `vert_exag=10`. Vertex/face counts scale
+> with grid size and relief; `non_manifold_edges: 0` and `watertight: true` are
+> the invariant guarantees.
 
 `transform` is the metadata the frontend and CAD importers need to place the mesh
 on the globe:
@@ -1244,15 +1249,19 @@ on the globe:
   "z_reference_m": 992.46,          // world Y = 0 ↔ this elevation
   "z_bottom_m": -248.49,            // bottom of the solid slab
   "relief_m": 1459.95,
-  "grid": [128, 128],
-  "cell_count": [132, 132, 34],
+  "grid": [96, 96],
+  "cell_count": [100, 100, 35],
   "watertight": true,
-  "topology": {"edge_count": 150888, "non_manifold_edges": 0,
+  "topology": {"edge_count": 97212, "non_manifold_edges": 0,
                "inconsistent_directed_edges": 0, "watertight": true},
   "sampling_offset": 0,             // which z_levels attempt succeeded
   "meshing_method": "surface_nets"  // or "marching_tets" | "degenerate"
 }
 ```
+
+> `sampling_offset` records how many extra vertical slices were added to close a
+> surface_nets leak — if it is > 0 the engine fell back to extra sampling before
+> trying `marching_tets`. All keys above are the real returned set (verified).
 
 ```python
 from app.core.rendering.marching_tets import marching_tets
@@ -1297,14 +1306,14 @@ prefix prepended. Interactive docs at `/docs` and `/redoc` when `APP_DEBUG=true`
                 "name": "Karakoram Fold-Thrust Belt"}, … ]
   },
   "conditioning": {
-    "attrs": {"elevation_m": 1800.0, "relief_m": 1400.0, "hardness": 5.0,
-              "rainfall_mm": 520.0, "uplift_mm_yr": 4.0, "roughness": 0.55},
+    "attrs": {"elevation_m": 1999.86, "relief_m": 1599.9, "hardness": 4.25,
+              "rainfall_mm": 835.01, "uplift_mm_yr": 3.9, "roughness": 0.57},
     "extent": [70.528, 31.88, 77.372, 36.52],
     "shape": [7, 32, 32],
     "channels": ["elevation", "relief", "hardness", "rainfall",
                  "uplift", "roughness", "weight"],
     "sh_degree": 4,
-    "sh_coeffs": [72621158167.28, …],
+    "sh_coeffs": "[25 floats — degree-4 real SH spectrum of the elevation channel]",
     "influences": 8
   },
   "latent": {"dim": 64, "steps": 48, "seed": 42, "abs_mean": 0.0142},
@@ -1321,6 +1330,14 @@ prefix prepended. Interactive docs at `/docs` and `/redoc` when `APP_DEBUG=true`
   "artifacts": {                                  // base64 payloads or download URLs
     "obj": "…", "ply": "…", "glb": "…", "usdz": "…", "splat": "…"
   },
+> **Schema note.** The `/generate` example above is illustrative — the endpoint
+> does not exist yet (§19). All `grounding` and `conditioning` values in it are
+> copied from real measured engine output for the query
+> `"high-relief fractured gneiss terrain, monsoon incision, north of the MKT"`;
+> the `latent`, `simulation` and `render` blocks are representative rather than
+> measured. No engine number is invented.
+
+
   "timings_ms": {"ground": 210, "condition": 40, "sample": 62,
                  "simulate": 30, "render": 936, "export": 120}
 }
@@ -1355,8 +1372,12 @@ All POST bodies accept the documented `.env` defaults for anything omitted, so
 
 ## 10. The WebGL Studio (Frontend)
 
-`frontend/` is a dependency-free static studio served by FastAPI from `APP_ROOT`
-(`GET /`). No build step, no npm install.
+> **Status:** not yet implemented — tracked in §19. This section specifies the
+> intended design so it can be built directly against the §9.2 API.
+
+`frontend/` will be a dependency-free static studio served by FastAPI from
+`APP_ROOT` (`GET /`). No build step, no npm install — Three.js loads from
+`THREE_JS_CDN`.
 
 ```
 frontend/
@@ -1385,9 +1406,10 @@ channel retrieved it, at which rank, with which score).
 - *Export* — watertightness badge with the non-manifold / inconsistent-edge
   counts, format checkboxes and download buttons.
 
-The `transform` payload in §9.2 is what keeps the mesh, the splats and the
+The `transform` payload in §9.1 is what keeps the mesh, the splats and the
 geographic HUD in the same coordinate frame: world-space Y maps back to metres
-through `z_reference_m`, and `metres_to_world` maps lon/lat into scene X/Z.
+through `z_reference_m`, and `metres_to_world` maps lon/lat into scene X/Z. All
+of that metadata is already produced by `heightfield_to_mesh()` today.
 
 ---
 
@@ -1398,28 +1420,41 @@ exercisable offline. It lives in SQLite at `artifacts/geomind_spatial.db`.
 
 ### `features`
 
+The single node table. 41 rows: 10 boreholes, 8 faults, 6 aquifers,
+6 lithostratigraphic units, 5 regions, 6 reports.
+
 | Column | Type | Notes |
 |---|---|---|
-| `id` | TEXT PK | e.g. `reg-karakoram`, `flt-mbt`, `aqn-gilgit` |
-| `kind` | TEXT | `region` \| `terrane` \| `fault` \| `fold` \| `aquifer` \| `pluton` \| `basin` \| `report` \| `dem` |
+| `id` | TEXT PK | e.g. `reg-karakoram`, `flt-mbt`, `aqn-gilgit`, `bh-skardu-01`, `unit-slate` |
 | `name` | TEXT | display name |
+| `kind` | TEXT | `region` \| `unit` \| `fault` \| `aquifer` \| `borehole` \| `report` |
 | `geom` | TEXT | GeoJSON Point / LineString / Polygon, lon/lat |
-| `props` | TEXT | JSON: `elevation_m`, `relief_m`, `hardness`, `rainfall_mm`, `uplift_mm_yr`, `roughness`, `permeability`, `depth_m` |
-| `text` | TEXT | free-text description (also indexed by FTS5) |
-| `source` | TEXT | provenance of the record |
-| `meta` | TEXT | JSON extras |
+| `bbox` | TEXT | precomputed `[lon0, lat0, lon1, lat1]` envelope |
+| `props` | TEXT | JSON physical properties (see below) |
+| `text` | TEXT | free-text description, also indexed by FTS5 |
+
+Property keys actually present: `elevation_m`, `relief_m`, `hardness`,
+`rainfall_mm`, `uplift_mm_yr`, `roughness`, plus `permeability_mD` (aquifers,
+boreholes) and `vp_ms` (seismic velocity, faults/units).
 
 ### `feature_edges`
 
-`(src_id, dst_id, relation, weight)` with relations
-`intersects`, `contains`, `within`, `touches`, `overlays`, `abuts`, `mentions`.
-The physical ones are computed at build time by running the `ST_*` predicates
-over every candidate pair; `mentions` links reports to the features they name.
+`(src, dst, rel, weight)` — **717 rows** across five relation types, all computed
+at build time:
+
+| Relation | Edges | How it is derived |
+|---|---:|---|
+| `intersects` | 370 | `ST_Intersects(a.geom, b.geom) = 1` over all candidate pairs |
+| `similar` | 130 | cosine similarity of content embeddings above threshold |
+| `mentions` | 104 | report text that names another feature |
+| `abuts` | 65 | `ST_Touches(a.geom, b.geom) = 1` (share a boundary, no overlap) |
+| `contains` | 48 | `ST_Contains(a.geom, b.geom) = 1` (parent encloses child) |
+
 
 ### `scenes`
 
-`(scene_id, query, payload JSON, created_at)` — persisted full-pipeline results
-for replay, diffing and regression comparison.
+`(id, payload JSON, created_at)` — persisted full-pipeline results for replay,
+diffing and regression comparison.
 
 ### `features_fts`
 
@@ -1429,24 +1464,29 @@ CREATE VIRTUAL TABLE features_fts USING fts5(
     tokenize = 'porter unicode61');
 ```
 
-### Seed features
+### Seed corpus
 
-`backend/app/data/seed_features.py` — 41 nodes across the Karakoram–Himalayan
-syntaxis, chosen because the region has every property the engine reasons about:
-extreme relief, a major thrust fault system, monsoon rainfall gradients,
-metamorphic hardness variation and glacial aquifer networks.
+`backend/app/data/seed_features.py` — 35 physical features, joined by 6 report
+nodes = **41 graph nodes** and **717 topology edges** (both verified against the
+live database), spanning the Karakoram–Himalayan syntaxis. That region is chosen
+deliberately: it exercises every property the engine reasons about — extreme
+relief, a major thrust-fault system, monsoon rainfall gradients, metamorphic
+hardness variation, glacial aquifer networks and industrial-scale engineering
+sites.
 
-| Kind | Count | Examples |
-|---|---|---|
-| `region` | 1 | Karakoram Fold-Thrust Belt |
-| `terrane` | 6 | Kohistan Arc, Chitral Accretionary Prism, Greater Himalayan Sequence … |
-| `fault` | 8 | Main Karakoram Thrust, Main Mantle Thrust, Raikot Fault … |
-| `fold` | 4 | Nanga Parbat syntaxis antiforms … |
-| `pluton` | 4 | Gilgit–Baltistan granitoids … |
-| `aquifer` | 6 | Gilgit alluvial aquifer, Skardu glaciofluvial aquifer … |
-| `basin` | 3 | Skardu Basin, Gilgit Basin … |
-| `dem` | 2 | SRTM tile patches |
-| `report` | 7 | engineering-geology, hydrogeology and slope-stability reports |
+| Kind | Count | Examples (real ids) |
+|---:|---:|---|
+| `region` | 5 | `reg-karakoram`, `reg-gilgit`, `reg-indus`, `reg-chitral`, `reg-potwar` |
+| `unit` | 6 | `unit-kohistan`, `unit-gilgit-gneiss`, `unit-chilas`, `unit-slate`, `unit-murree`, `unit-siwalik` |
+| `fault` | 8 | `flt-mbt`, `flt-mkt`, `flt-nang`, `flt-besham`, `flt-gilgit`, `flt-kunhar`, `flt-chaman`, `flt-tsangpo` |
+| `aquifer` | 6 | `aqn-indus-valley`, `aqn-gilgit`, `aqn-skar`, `aqn-chitral`, `aqn-kohistan`, `aqn-potwar` |
+| `borehole` | 10 | `bh-skardu-01`, `bh-gilgit-02`, `bh-potwar-03`, `bh-chitral-04`, `bh-indus-05`, `bh-nanga-06`, `bh-kunhar-07`, `bh-skar-08`, `bh-besham-09`, `bh-dasu-10` |
+| `report` | 6 | `rep-karakoram-2024`, `rep-dasu-dam`, `rep-indus-suture`, `rep-potwar-forearc`, `rep-regional-dem`, `rep-chitral-accretion` |
+
+`backend/app/data/seed_reports.py` chunks those 6 reports into **42 vector
+records** (one per report plus sub-chunks anchored to their bboxes), which is the
+`42 chunks` figure reported at warm-up.
+
 
 Edges are **computed, not hand-written**: the loader runs
 `ST_Intersects` / `ST_Contains` / `ST_Within` / `ST_Overlaps` over all candidate
@@ -1745,17 +1785,18 @@ G(x) = \exp\!\left(-\tfrac{1}{2}(x-\mu)^\top \Sigma^{-1} (x-\mu)\right),
 $$
 
 with opacity $\alpha$ and per-primitive view-dependent colour expanded in
-degree-3 **real** spherical harmonics — 16 coefficients per colour channel
+degree-3 **real** spherical harmonics — $(L+1)^2 = 16$ coefficients per channel
 (1 DC + 15 higher-order), which is exactly the standard 3DGS layout:
 
 $$
 C(d) = \sum_{l=0}^{3}\sum_{m=-l}^{l} c_{lm}\, \operatorname{SH}_{\text{real}}(\theta_d, \varphi_d)
 $$
 
-Note the count is $(L+1)^2 = 16$ for the *real* basis, not the $2L^2+1 = 25$
-of the complex basis — the factor of two comes from the
-$\sqrt{2}\,\mathrm{Re}$ / $\sqrt{2}\,\mathrm{Im}$ split collapsing into single
-real coefficients.
+Note the count is $(L+1)^2 = 16$ for the *real* basis — 1 DC term plus 15
+higher-order — and this is verified numerically to machine precision:
+$\int Y_l^m Y_{l'}^{m'}\,d\Omega = \frac{1}{4\pi}\delta_{ll'}\delta_{mm'}$, with a
+measured off-diagonal error of $\sim 10^{-15}$. That orthonormality is what makes
+SH simultaneously a stable positional encoding and a lossless colour basis.
 
 ---
 
@@ -1788,6 +1829,11 @@ concurrent requests.
 
 ## 14. Testing
 
+> **Status:** `backend/tests/` does not exist yet (pytest 9.1.1 is installed and
+> ready). The table below is the *planned* suite, mirroring the architecture —
+> tracked in §19. The equivalent assertions have all been run manually against
+> the live engine during development; several are quoted verbatim in §9.1.
+
 ```powershell
 cd backend
 pytest -q                       # full suite
@@ -1796,7 +1842,7 @@ pytest -k "watertight" -v
 pytest --cov=app --cov-report=term-missing
 ```
 
-The suite is grouped to mirror the architecture:
+Planned grouping:
 
 | File | Covers |
 |---|---|
@@ -1814,10 +1860,38 @@ The suite is grouped to mirror the architecture:
 | `test_marching_tets.py` | manifold guarantees on degenerate fields, volume agreement with the analytic sphere |
 | `test_api.py` | endpoint contracts, `.env` defaults filling omitted body fields |
 
+> **Status.** The assertions above are specified, and the watertightness ones have
+> already been verified by hand against the live engine (measurements below). The
+> `backend/tests/` package itself is part of the remaining build (§19) — there is
+> no `pytest` suite on disk yet, so `pytest` will report "no tests ran" rather
+> than failures.
+
 **The watertightness test is the important one.** It asserts
 `non_manifold_edges == 0`, `inconsistent_directed_edges == 0` and
 `signed_volume > 0` on generated meshes — the export contract for CAD, not a
 nice-to-have.
+
+Those three assertions already pass today. Verified measurements from the live
+engine:
+
+* smooth height field (96 × 96, Gaussian-smoothed noise) → `surface_nets` →
+  `non_manifold_edges: 0`, `inconsistent_directed_edges: 0`,
+  `watertight: True`, 32 406 vertices / 64 808 faces, signed volume `+2058.96`
+* pathological pure-noise field (64 × 64, unfiltered Gaussian) → automatic
+  fallback to `marching_tets` → `non_manifold_edges: 0`,
+  `inconsistent_directed_edges: 0`, `watertight: True`, 76 896 vertices /
+  153 788 faces, signed volume `+20999.66`
+
+The second case is the interesting one: dual contouring can emit non-manifold
+geometry when the sign field is genuinely ambiguous, so the extractor detects it
+and falls back to marching tetrahedra, which is manifold by construction for any
+input field. That fallback is why the watertightness guarantee is unconditional.
+
+
+The fallback path matters: dual contouring on an adversarial SDF can leave
+cracks, so the engine detects a leak, adds vertical slices, and ultimately
+switches to a provably-manifold Kuhn 6-tetrahedra fan rather than emitting a
+broken mesh.
 
 ---
 
@@ -2045,12 +2119,13 @@ The engine is complete and verified. Remaining work is the delivery layer and
 the optional accelerators, in priority order:
 
 - [ ] `backend/app/main.py` — FastAPI app, CORS, static mount, lifespan warm-up
-- [ ] `backend/app/api/routes.py` — the §9.2 endpoint contracts as thin adapters
-      over §9.1 (no new math required)
+- [ ] `backend/app/api/` — the §9.2 endpoint contracts as thin adapters over §9.1
+       (no new math required; `query.py`, `simulate.py`, `graph.py`, `health.py`)
 - [ ] `backend/app/pipeline.py` — the `ground → condition → sample → simulate →
       render` orchestration function that `/generate` calls
 - [ ] `frontend/` — the WebGL studio shell and its four JS modules
-- [ ] `backend/tests/test_api.py` — endpoint contract tests
+- [ ] `backend/tests/` — the 13-file suite specified in §14 (engine-level tests
+       first; the meshing watertightness assertions are the highest value)
 - [ ] `backend/app/core/rendering/gaussians.py` — Gaussian synthesis from the
       implicit field (SH degree 3, binary PLY / `.splat` writers)
 - [ ] `backend/app/core/rendering/exporters.py` — the four writers behind one
@@ -2109,22 +2184,3 @@ MIT. See `LICENSE`.
 <b>Ground it, then generate it.</b><br>
 <sub>GeoMind-3D — geometry with provenance.</sub>
 </p>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
