@@ -2178,7 +2178,7 @@ MIT. See `LICENSE`.
 10. Bloomenthal & Shoemake, *Convolution Surfaces*, SIGGRAPH, 1991 (metaball /
     gsplat kernel background).
 
----
+--
 
 <p align="center">
 <b>Ground it, then generate it.</b><br>
