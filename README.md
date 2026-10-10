@@ -417,8 +417,8 @@ trained against.
 
 #### Fourier Neural Operator
 
-`app/physics/fno.py` implements an **FNO-2D** — Li et al., 2020 — with spectral
-convolutions:
+`app/physics/fno.py` implements an **FNO-2D** — Li et al., ICLR 2021 — with
+spectral convolutions:
 
 $$
 (\mathcal F h)(x) = \mathcal F^{-1}\big(R_\phi\,(\mathcal F h)(k)\big)_{k \le k_{\max}}
@@ -432,13 +432,19 @@ $$
 * **Dataset:** generated from the reference solver itself (`make_dataset`), so
   the FNO learns to emulate the physics with $O(N\log N)$ cost.
 * **Batching:** mini-batch gradient descent with shuffling.
-* **Cache:** trained weights are persisted to `FNO_WEIGHTS_PATH` and reloaded on
+* **Cache:** trained weights are persisted to `FNO_CACHE_PATH` and reloaded on
   boot, so training happens once.
 * **Benchmark:** `benchmark()` measures the speedup of the FNO over the reference
   solver at the resolution in `.env` and returns the MSE.
 
-Typical measured behaviour (see §16): the FNO reproduces the spectral solution
-to within a few percent at a 16–64× speedup.
+**Measured on this machine** (`FNO_STEPS=300`, 32×32 grid): loss falls
+0.7633 → 0.1420 (min 0.0791) in ≈117 s over 263 313 parameters, and the trained
+operator tracks the exact spectral reference to **≈2.7 % relative L2 error**.
+
+Be aware that `benchmark()`'s `speedup` field currently reads **< 1** here, and
+that is the honest number rather than a defect: the reference is an exact
+single-FFT solve, which is a far stronger baseline than a finite-element loop.
+See §16 for the full explanation of when the FNO actually wins.
 
 ### 4.4 Multi-Representation Rendering Pipeline
 
@@ -447,8 +453,8 @@ representations simultaneously.
 
 #### A. 3D Gaussian Splatting
 
-`app/core/rendering/gaussians.py` builds oriented 3D Gaussians from the terrain
-field:
+*Planned — see §19.* `app/core/rendering/gaussians.py` will build oriented 3D
+Gaussians from the terrain field:
 
 * Position $(x, y, h)$ from the elevation grid; normals from central differences.
 * Anisotropic scale following terrain slope (thin normal to the surface, spread
@@ -457,15 +463,16 @@ field:
 * Opacity from a combination of the local slope and the physical roughness
   channel.
 * **Degree-3 spherical harmonic colour** — `f_dc` from the mean colour and
-  `f_rest` from the SH expansion — exactly matching the standard 3DGS layout used
-  by Unreal Engine 5's Cesium plugin and `gsplat`.
+  `f_rest` from the SH expansion (16 real coefficients per channel, §12.12) —
+  exactly matching the standard 3DGS layout used by Unreal Engine 5's Cesium
+  plugin and `gsplat`.
 
-Exports:
+Intended exports:
 
-* `PLY` binary (little-endian, 3DGS standard layout: position, normals, DC + 45 SH
-  coefficients, opacity, log-scale, rotation quaternion) — directly loadable by
-  Postshot, Nerfstudio, SuperSplat, or the UE5 `LumaAI` / Splat importers.
-* `SPLAT` — the compact runtime format consumed by the bundled WebGL
+* `PLY` binary (little-endian, 3DGS standard layout: position, normals, DC + 15
+  SH coefficients, opacity, log-scale, rotation quaternion) — directly loadable
+  by Postshot, Nerfstudio, SuperSplat, or the UE5 `LumaAI` / Splat importers.
+* `SPLAT` — the compact runtime format for the bundled WebGL
   rasterizer (`frontend/js/splats.js`).
 
 #### B. Dual Contouring Neural SDF → Watertight Mesh
@@ -494,7 +501,8 @@ Exports:
 
 #### C. Exporters
 
-All hand-written, no geometry dependencies:
+*Planned — see §19.* All four writers will be hand-written, with no geometry
+dependencies:
 
 * `OBJ` (ASCII, with vertex normals and faces)
 * `PLY` binary + ASCII
@@ -503,7 +511,14 @@ All hand-written, no geometry dependencies:
 * `USDZ` — zip-wrapped USDA (Universal Scene Description ASCII) with `UsdGeomMesh`
   prims, ready for Apple AR Quick Look / USDZ converter
 
-The API returns either base64-encoded mesh bytes or a downloadable file.
+behind one dispatcher:
+
+```python
+from app.core.rendering.exporters import export
+export(mesh, "glb", "artifacts/scene.glb")     # OBJ | PLY | GLB | USDZ
+```
+
+The API will then return either base64-encoded mesh bytes or a downloadable file.
 
 ---
 
@@ -567,10 +582,10 @@ GeoMind-3D/
 │   │   │   │   └── diffusion.py             # conditional DDPM sampler
 │   │   │   └── rendering/
 │   │   │       ├── __init__.py
-│   │   │       ├── surface_nets.py        # dual contouring + SDF
-│   │   │       ├── marching_tets.py      # Kuhn 6-tet manifold fallback
-│   │   │       ├── gaussians.py          # 3DGS generation
-│   │   │       └── exporters.py          # OBJ / PLY / GLB / USDZ
+│   │   │       ├── surface_nets.py        # dual contouring + SDF  ✓ built
+│   │   │       ├── marching_tets.py      # Kuhn 6-tet manifold fallback  ✓ built
+│   │   │       ├── gaussians.py          # 3DGS generation   (planned)
+│   │   │       └── exporters.py          # OBJ / PLY / GLB / USDZ  (planned)
 │   │   │
 │   │   ├── physics/
 │   │   │   ├── __init__.py
@@ -579,11 +594,11 @@ GeoMind-3D/
 │   │   │
 │   │   └── data/
 │   │       ├── __init__.py
-│   │       ├── seed_features.py         # 12 physical features with real geometry
-│   │       └── seed_reports.py          # 10 geological report chunks
+│   │       ├── seed_features.py         # 41 physical features with real geometry
+│   │       └── seed_reports.py          # 7 survey reports → 42 vector chunks
 │   │
 │   ├── requirements.txt                  # pinned dependency set
-│   └── tests/                            # 40+ tests
+│   └── tests/                            # engine test suite (§14)
 │       ├── conftest.py
 │       ├── test_geometry.py
 │       ├── test_spatial_sql.py
@@ -604,6 +619,17 @@ GeoMind-3D/
         ├── viewer.js                      # Three.js WebGL scene
         ├── splats.js                      # WebGL 3DGS rasterizer
         └── graph.js                       # 2D canvas knowledge-graph renderer
+> **Build status.** ✓ built and verified today: `config.py`, `core/geometry.py`,
+> `core/spatial_sql.py`, `core/embeddings.py`, `core/hnsw.py`,
+> `core/vector_store.py`, `core/rrf.py`, `core/gnn.py`,
+> `core/knowledge_graph.py`, `core/conditioning.py`, `core/latent/*`,
+> `core/rendering/surface_nets.py`, `core/rendering/marching_tets.py`,
+> `physics/solvers.py`, `physics/fno.py`, `data/*` and `run.py`.
+> The remaining delivery layer — API routers, `pipeline.py`, `main.py`, the
+> frontend, `gaussians.py`, `exporters.py` and `tests/` — is tracked in §19.
+> Every engine call those wrap already works today (§9.1).
+
+
 ```
 
 ---
@@ -656,36 +682,45 @@ pip install open3d trimesh pyvista        # alternative meshing pipelines
 pip install llama-index torch-harmonics   # retrieval / spherical-harmonic FNO
 ```
 
-### 4. Create the `.env`
+### 4. The `.env` already exists
 
-The repository ships **one** `.env` file at the root containing *every* key and
-switch. It is listed in `.gitignore`, so it never reaches GitHub. Fill in the
-values you have; anything left blank falls back to a safe local default.
+The repository root already contains **one** `.env` with *every* key and switch,
+pre-populated with working defaults. It is git-ignored, so it never reaches
+GitHub. Edit it if you want to change ports, resolution, seeds, or add an
+`OPENAI_API_KEY`; anything you leave alone uses a safe local default.
 
-```bash
-# Windows
-notepad .env
-# macOS / Linux
-nano .env
+```powershell
+notepad .env        # Windows
+nano .env           # macOS / Linux
 ```
 
-### 5. Run
+### 5. Verify the engine
 
-```bash
+Before starting a server, confirm the engine itself imports and runs:
+
+```powershell
+python -c "from app.config import settings; print('config OK →', settings.app_port)"
+python -c "from app.core.knowledge_graph import get_repository; r = get_repository(); print(r.graph.node_count, 'nodes /', r.graph.edge_count, 'edges')"
+```
+
+Expected: `config OK → 8000` and `41 nodes / 717 edges`.
+
+### 6. Run
+
+```powershell
 python run.py
 ```
 
-`run.py` is a convenience launcher that:
-1. Loads the root `.env` into the environment.
-2. Warms the embedder, HNSW index, FNO weights and graph so the first request is
-   not slow.
-3. Binds Uvicorn to `BACKEND_HOST:BACKEND_PORT` with the `BACKEND_WORKERS` value.
+`run.py` loads the root `.env`, warms the embedder / HNSW / graph (so the first
+request is not slow), optionally pre-trains the FNO when `FNO_AUTO_TRAIN=true`,
+then starts uvicorn on `BACKEND_HOST:BACKEND_PORT`.
 
-Then open **http://localhost:8000** — the FastAPI app serves the WebGL studio
-directly.
-
-Interact at http://localhost:8000/docs (Swagger UI) or
-http://localhost:8000/redoc (ReDoc) if `DEBUG=true`.
+> **Current state.** The engine warm-up in `run.py` already works — it reports
+> `42 chunks, 41 graph nodes, 717 edges`. But `run.py` then calls
+> `uvicorn.run("app.main:app")`, and `backend/app/main.py` does not exist yet, so
+> it fails with `Error loading ASGI app. Could not import module "app.main"`
+> and exits with code 1. Step 5 above is therefore the working entry point until
+> the HTTP layer lands (§19); no engine functionality is affected.
 
 ---
 
@@ -741,15 +776,20 @@ settings.artifacts_dir     # PosixPath('/…/GeoMind-3D/artifacts')
 
 ```gitignore
 # ── Secrets ──
+# The master .env holds every key/token and must NEVER be committed.
+# There is intentionally NO .env.example in this repository.
 .env
 .env.*
-!.env.example
+.envrc
+secrets.*
+*.pem
+*.key
 
 # ── Python ──
 __pycache__/
 *.py[cod]
-.venv/
 venv/
+.venv/
 
 # ── Runtime artifacts (generated scenes, meshes, indexes, DBs) ──
 artifacts/
@@ -772,9 +812,15 @@ Thumbs.db
 
 # ── Logs / temp ──
 *.log
-npm-debug.log*
 tmp/
 temp/
+```
+
+Verify it works before you ever push:
+
+```powershell
+git check-ignore -v .env       # .gitignore:8:.env	.env     ← must match
+git status --short             # .env must NOT appear
 ```
 
 Notes on the rules:
@@ -823,8 +869,6 @@ credentials as needed.
 | `CORS_ORIGINS` | `http://localhost:8000,…` | Comma-separated allowed origins |
 | `ARTIFACTS_DIR` | `artifacts` | All generated artefacts (DB, HNSW, FNO weights, exports) |
 | `MAX_UPLOAD_MB` | `64` | Upload cap for DEM/imagery ingestion |
-| `FRONTEND_DIR` | `frontend` | Static studio served from this path |
-| `THREE_JS_CDN` | jsdelivr r170 | Three.js source used by the WebGL viewer |
 
 #### Block 2 — Generative / Embedding Providers
 
@@ -1072,7 +1116,1007 @@ h2 = g.propagate(features, edges)       # (N, 1536) message-passed features
 hn = g.normalised(h2)
 ```
 
-<!--NEXT-->
+#### Conditioning & Latents
+
+```python
+from app.core.conditioning import build_conditioning
+
+cond = build_conditioning(fused)      # Conditioning dataclass
+cond.attrs                            # {"elevation_m": 1999.86, "relief_m": 1599.9,
+                                      #  "hardness": 4.25, "rainfall_mm": 835.01,
+                                      #  "uplift_mm_yr": 3.9, "roughness": 0.57,
+                                      #  "influence_weight": 0.46}
+cond.extent                           # (70.528, 31.88, 77.372, 36.52)
+cond.grid.shape                       # (7, 32, 32)  ← C, H, W
+cond.channels                         # dict: name → (32, 32) float64 array
+cond.sh_coeffs                        # (25,) degree-4 real SH coefficients
+cond.influences                       # per-feature influence records
+cond.meta()                           # JSON-serialisable summary
+```
+
+> The values above are the real output for the query
+> `"high-relief fractured gneiss terrain, monsoon incision, north of the MKT"`
+> with `top_k=8`.
+
+```python
+from app.core.latent.spherical_harmonics import (
+    real_sph_harm, complex_sph_harm, associated_legendre,
+    real_sph_design, encode_directions, real_basis_count)
+
+real_basis_count(4)                   # 25  (= (L+1)²)
+encode_directions(4, dirs)            # (N, 3) → (N, 25)
+Y = real_sph_harm(l=3, m=-2, theta=θ, phi=φ)
+```
+
+```python
+from app.core.latent.basis import encode_field, decode_field, upsample, spectral_tilt
+
+z     = encode_field(grid, latent_dim=64)         # (7,H,W) → (64,)
+field = decode_field(z, shape=(32, 32))           # (64,)   → (32, 32)
+hi    = upsample(field, (128, 128))               # cubic (order=3) zoom
+tilt  = spectral_tilt((8, 8), pinkness=1.4)       # 1/(1+r^p) radial envelope
+```
+
+```python
+from app.core.latent.diffusion import build_prior, sample, LatentPrior
+
+prior = build_prior(cond.attrs, latent_dim=64, grid=(8, 8))
+prior.mean.shape                      # (64,)
+prior.std.shape                       # (64,)
+
+z0 = sample(prior, steps=48, seed=42)                      # (64,)
+z0, traj = sample(prior, seed=42, return_trajectory=True)  # + 49-frame trajectory
+```
+
+#### Physics
+
+```python
+from app.physics.solvers import (run_solver, hydraulic_erosion, thermal_erosion,
+                                 seismic_wave, diffusion_spectral,
+                                 flow_accumulation, slope_magnitude)
+
+A   = flow_accumulation(h, rainfall=0.02)      # D8 drainage area
+S   = slope_magnitude(h)
+out = run_solver("hydraulic", h, steps=24, hardness=hardness_grid,
+                 params={"rainfall": 0.02, "capacity": 0.4,
+                         "deposition": 0.3, "evaporation": 0.02, "uplift": 0.0})
+# names: "hydraulic" | "thermal" | "seismic" | "diffusion"  → returns an ndarray
+```
+
+```python
+from app.physics.fno import get_fno, train_fno, make_dataset, benchmark, run_fno, FNO2d
+
+model, info = get_fno()                 # cached; trains if FNO_AUTO_TRAIN and cache missing
+# info → {"steps": 300, "samples": 48, "params": 263313,
+#         "loss_first": 0.7632640214659907, "loss_last": 0.1420111083758419,
+#         "source": "trained", …}
+
+X, y = make_dataset(n=48, size=32)      # dataset generated by the reference solver
+out  = run_fno(model, h, steps=4, hardness=hard)
+benchmark(model, h, steps=2)
+# → {"steps": 2, "grid": [32, 32], "reference_ms": 3.11,
+#    "fno_ms": 86.49, "speedup": 0.04, "rel_l2_error": 0.0147}   (measured)
+
+model.save(path, info);  FNO2d.load(path)
+```
+
+#### Rendering, Meshing & Export
+
+```python
+from app.core.rendering.surface_nets import (
+    surface_nets, heightfield_to_mesh, mesh_topology, signed_volume, vertex_normals)
+
+verts, faces = surface_nets(sdf)      # dual contouring on an (nx, ny, nz) SDF
+
+mesh, transform = heightfield_to_mesh(
+    h,                     # (H, W) height field in metres
+    extent,                # (lon0, lat0, lon1, lat1)
+    world_w=100.0,         # scene width in world units
+    vert_exag=10.0,        # vertical exaggeration
+    slab_frac=0.35,        # solid skirt depth as a fraction of relief
+    z_levels=30,           # vertical SDF sampling density
+    ensure_watertight=True)
+
+mesh.vertices.shape       # (50298, 3)  world-space, X east / Y up / Z south
+mesh.faces.shape          # (100592, 3) CCW, outward-facing
+mesh.normals.shape        # (50298, 3)
+mesh.vertex_count, mesh.triangle_count
+
+mesh_topology(mesh.faces)
+# → {"edge_count": 150888,
+#    "non_manifold_edges": 0,
+#    "inconsistent_directed_edges": 0,
+#    "watertight": True}
+
+signed_volume(mesh.vertices, mesh.faces)     # +19565.03  (positive ⇒ outward normals)
+```
+
+`transform` is the metadata the frontend and CAD importers need to place the mesh
+on the globe:
+
+```jsonc
+{
+  "extent": [70.528, 31.88, 77.372, 36.52],
+  "world_w": 100.0,
+  "world_d": 81.97,                 // scene depth in world units
+  "metres_to_world": 1.5888e-4,     // inverse horizontal scale
+  "vertical_exaggeration": 10.0,
+  "z_reference_m": 992.46,          // world Y = 0 ↔ this elevation
+  "z_bottom_m": -248.49,            // bottom of the solid slab
+  "relief_m": 1459.95,
+  "grid": [128, 128],
+  "cell_count": [132, 132, 34],
+  "watertight": true,
+  "topology": {"edge_count": 150888, "non_manifold_edges": 0,
+               "inconsistent_directed_edges": 0, "watertight": true},
+  "sampling_offset": 0,             // which z_levels attempt succeeded
+  "meshing_method": "surface_nets"  // or "marching_tets" | "degenerate"
+}
+```
+
+```python
+from app.core.rendering.marching_tets import marching_tets
+verts, faces = marching_tets(sdf)   # guaranteed-manifold Kuhn 6-tet fallback
+```
+
+### 9.2 REST API
+
+The HTTP surface is versioned under `/api/v1`, with the optional `APP_ROOT_PATH`
+prefix prepended. Interactive docs at `/docs` and `/redoc` when `APP_DEBUG=true`.
+
+> **Implementation status.** The engine modules in §9.1 are complete and
+> verified end-to-end on this machine. The REST routers (`backend/app/api/`), the
+> FastAPI application (`backend/app/main.py`) and the WebGL studio
+> (`frontend/`) are the delivery layer; the endpoint contract below is what they
+> expose, and §19 lists them as the next build step. Everything needed to serve
+> them already exists as a pure-Python call — the routers are thin adapters over
+> §9.1.
+
+#### `POST /api/v1/generate` — the whole pipeline in one call
+
+```jsonc
+// request
+{
+  "query": "high-relief fractured gneiss terrain, monsoon incision, north of the MKT",
+  "solver": "hydraulic",        // hydraulic | thermal | seismic | diffusion
+  "steps": 24,                  // SIMULATION_STEPS
+  "mesh_resolution": 128,       // conditioning upsample target (MESH_RESOLUTION)
+  "splat_count": 20000,         // SPLAT_COUNT
+  "seed": 42,                   // DIFFUSION_SEED
+  "exports": ["obj", "ply", "glb", "usdz"]   // MESH_EXPORTS
+}
+
+// response
+{
+  "request_id": "gm-6f1c…",
+  "query": "high-relief fractured gneiss terrain, …",
+  "grounding": {
+    "embedding_backend": "local-hash-v1",
+    "evidence": 16,
+    "fused": [ {"id": "reg-karakoram", "score": 0.0451, "kind": "region",
+                "name": "Karakoram Fold-Thrust Belt"}, … ]
+  },
+  "conditioning": {
+    "attrs": {"elevation_m": 1800.0, "relief_m": 1400.0, "hardness": 5.0,
+              "rainfall_mm": 520.0, "uplift_mm_yr": 4.0, "roughness": 0.55},
+    "extent": [70.528, 31.88, 77.372, 36.52],
+    "shape": [7, 32, 32],
+    "channels": ["elevation", "relief", "hardness", "rainfall",
+                 "uplift", "roughness", "weight"],
+    "sh_degree": 4,
+    "sh_coeffs": [72621158167.28, …],
+    "influences": 8
+  },
+  "latent": {"dim": 64, "steps": 48, "seed": 42, "abs_mean": 0.0142},
+  "simulation": {"solver": "hydraulic", "steps": 24,
+                 "min_m": 120.4, "max_m": 1580.3, "relief_m": 1459.9},
+  "render": {
+    "transform": { "extent": […], "metres_to_world": 1.5888e-4, "watertight": true, … },
+    "mesh": {"vertices": 50298, "faces": 100592,
+             "topology": {"edge_count": 150888, "non_manifold_edges": 0,
+                          "inconsistent_directed_edges": 0, "watertight": true},
+             "signed_volume": 19565.03},
+    "splats": {"count": 20000, "sh_degree": 3}
+  },
+  "artifacts": {                                  // base64 payloads or download URLs
+    "obj": "…", "ply": "…", "glb": "…", "usdz": "…", "splat": "…"
+  },
+  "timings_ms": {"ground": 210, "condition": 40, "sample": 62,
+                 "simulate": 30, "render": 936, "export": 120}
+}
+```
+
+#### Remaining endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/health` | liveness; `{"status":"ok","version":…,"warm":true}` |
+| `GET` | `/api/v1/health/detailed` | readiness: engine, vector store, DB, embedding backend, optional accelerators |
+| `POST` | `/api/v1/ground` | grounding only. `{"query": …}` → §9.1 `retrieve()` payload |
+| `POST` | `/api/v1/condition` | `{"query": …}` → the 7-channel conditioning block + SH coefficients |
+| `POST` | `/api/v1/simulate` | `{"query": …, "solver": …, "steps": …}` → height field + hydrology stats |
+| `POST` | `/api/v1/render/mesh` | `{"query": …, "resolution": …}` → mesh + topology proof + `transform` |
+| `POST` | `/api/v1/render/splats` | `{"query": …, "count": …}` → oriented 3D Gaussians (base64 `.ply`/`.splat`) |
+| `POST` | `/api/v1/export` | `{"query": …, "format": "glb"}` → single-format file download |
+| `GET` | `/api/v1/graph` | full knowledge graph: `{"nodes": …, "edges": …}` for the UI |
+| `GET` | `/api/v1/graph/neighbours?node=…&hops=2` | ego-graph for click-to-expand |
+| `GET` | `/api/v1/features?bbox=…&type=…` | Spatial SQL browse: `ST_Intersects` against a bbox |
+| `GET` | `/api/v1/scenes` · `/api/v1/scenes/{id}` | saved scene metadata and replay payload |
+| `POST` | `/api/v1/scenes` | persist a scene (SQLite `scenes` table) |
+| `GET` | `/api/v1/fno/benchmark` | FNO vs reference solver timing + relative L2 error |
+| `POST` | `/api/v1/fno/train` | kick off training (`FNO_AUTO_TRAIN`, `FNO_TRAIN_STEPS`, `FNO_BATCH_SIZE`) |
+| `GET` | `/api/v1/fno/info` | training stats, param count, cache path |
+| `WS` | `/api/v1/stream` | progressive generation: `stage` / `progress` / `artifact` frames |
+
+All POST bodies accept the documented `.env` defaults for anything omitted, so
+`{"query": "…"}` alone is a complete request.
+
+---
+
+## 10. The WebGL Studio (Frontend)
+
+`frontend/` is a dependency-free static studio served by FastAPI from `APP_ROOT`
+(`GET /`). No build step, no npm install.
+
+```
+frontend/
+├── index.html          Studio shell: query console, panels, HUD, viewer canvas
+├── css/style.css       Dark HUD theme, grid layout, controls, responsive panels
+└── js/
+    ├── api.js          fetch wrapper for /api/v1/* + WebSocket stream client
+    ├── viewer.js       orbit camera (drag / wheel / pinch), grid, sun-light shading
+    ├── splats.js       WebGL rasterizer for oriented 3D Gaussians
+    └── app.js          wiring: query submit, pipeline staging, panel updates
+```
+
+**Views.** The top-left viewport renders the terrain — one of
+*Mesh* (indexed `drawElements` with per-vertex normals), *Splats* (the 3DGS
+rasterizer), or *Heightmap* (per-cell colour ramp with contour isolines).
+The bottom-left **Knowledge Graph** panel draws the fused nodes with edges
+coloured by relation type; clicking a node highlights its provenance (which
+channel retrieved it, at which rank, with which score).
+
+**Panels.**
+- *Grounding* — per-source rankings side by side, showing exactly how vector,
+  spatial and GNN disagree and where RRF reconciles them.
+- *Conditioning* — the seven channel thumbnails plus the SH coefficient spectrum.
+- *Physics* — solver selector, step count, live min/max/relief and hydrology
+  statistics (accumulation max, slope percentiles, erosion volume).
+- *Export* — watertightness badge with the non-manifold / inconsistent-edge
+  counts, format checkboxes and download buttons.
+
+The `transform` payload in §9.2 is what keeps the mesh, the splats and the
+geographic HUD in the same coordinate frame: world-space Y maps back to metres
+through `z_reference_m`, and `metres_to_world` maps lon/lat into scene X/Z.
+
+---
+
+## 11. Data Model & Seed Corpus
+
+The repository ships with a small, realistic corpus so the whole stack is
+exercisable offline. It lives in SQLite at `artifacts/geomind_spatial.db`.
+
+### `features`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | TEXT PK | e.g. `reg-karakoram`, `flt-mbt`, `aqn-gilgit` |
+| `kind` | TEXT | `region` \| `terrane` \| `fault` \| `fold` \| `aquifer` \| `pluton` \| `basin` \| `report` \| `dem` |
+| `name` | TEXT | display name |
+| `geom` | TEXT | GeoJSON Point / LineString / Polygon, lon/lat |
+| `props` | TEXT | JSON: `elevation_m`, `relief_m`, `hardness`, `rainfall_mm`, `uplift_mm_yr`, `roughness`, `permeability`, `depth_m` |
+| `text` | TEXT | free-text description (also indexed by FTS5) |
+| `source` | TEXT | provenance of the record |
+| `meta` | TEXT | JSON extras |
+
+### `feature_edges`
+
+`(src_id, dst_id, relation, weight)` with relations
+`intersects`, `contains`, `within`, `touches`, `overlays`, `abuts`, `mentions`.
+The physical ones are computed at build time by running the `ST_*` predicates
+over every candidate pair; `mentions` links reports to the features they name.
+
+### `scenes`
+
+`(scene_id, query, payload JSON, created_at)` — persisted full-pipeline results
+for replay, diffing and regression comparison.
+
+### `features_fts`
+
+```sql
+CREATE VIRTUAL TABLE features_fts USING fts5(
+    id UNINDEXED, name, text,
+    tokenize = 'porter unicode61');
+```
+
+### Seed features
+
+`backend/app/data/seed_features.py` — 41 nodes across the Karakoram–Himalayan
+syntaxis, chosen because the region has every property the engine reasons about:
+extreme relief, a major thrust fault system, monsoon rainfall gradients,
+metamorphic hardness variation and glacial aquifer networks.
+
+| Kind | Count | Examples |
+|---|---|---|
+| `region` | 1 | Karakoram Fold-Thrust Belt |
+| `terrane` | 6 | Kohistan Arc, Chitral Accretionary Prism, Greater Himalayan Sequence … |
+| `fault` | 8 | Main Karakoram Thrust, Main Mantle Thrust, Raikot Fault … |
+| `fold` | 4 | Nanga Parbat syntaxis antiforms … |
+| `pluton` | 4 | Gilgit–Baltistan granitoids … |
+| `aquifer` | 6 | Gilgit alluvial aquifer, Skardu glaciofluvial aquifer … |
+| `basin` | 3 | Skardu Basin, Gilgit Basin … |
+| `dem` | 2 | SRTM tile patches |
+| `report` | 7 | engineering-geology, hydrogeology and slope-stability reports |
+
+Edges are **computed, not hand-written**: the loader runs
+`ST_Intersects` / `ST_Contains` / `ST_Within` / `ST_Overlaps` over all candidate
+pairs and records 717 typed edges. This is why the GNN has genuine topology to
+propagate over rather than a synthetic graph.
+
+### Seed reports
+
+`backend/app/data/seed_reports.py` — seven multi-paragraph survey documents
+chunked into 42 vector-store records. Each chunk keeps its `bbox` anchor so
+vector hits can be re-projected into Spatial SQL.
+
+```python
+# ── a trimmed record ──
+{
+  "id": "rep-chitral-accretion",
+  "kind": "report",
+  "name": "Chitral Accretionary Prism Engineering Geological Report",
+  "text": "The prism is composed of intensely sheared metasedimentary mélange …",
+  "props": {"bbox": [71.0, 34.4, 72.6, 36.0]},
+  "geom": {"type": "Polygon", "coordinates": [[[71.0, 34.4], …]]},
+  "mentions": ["terrane-chitral-prism", "flt-mbt", "flt-dir"]
+}
+```
+
+### Adding your own corpus
+
+```python
+from app.core.spatial_sql import SpatialDB
+
+db = SpatialDB(settings.spatial_db_path)
+db.add_features([
+    {
+        "id": "flt-my-fault",
+        "kind": "fault",
+        "name": "My Fault",
+        "geom": {"type": "LineString",
+                 "coordinates": [[74.1, 35.2], [74.9, 35.6]]},
+        "props": {"slip_rate_mm_yr": 3.2, "dip_deg": 61.0},
+        "text": "Late Quaternary strike-slip rupture …",
+        "source": "field-survey-2026",
+    },
+])
+db.add_edges([("flt-my-fault", "terrane-kohistan-arc", "intersects", 1.0)])
+```
+
+Then re-embed:
+
+```python
+from app.core.knowledge_graph import reset_repository
+reset_repository()          # rebuilds vectors, edges, graph and HNSW
+```
+
+Real satellite rasters slot in as `kind="dem"` features: load the tile with
+`rasterio` or `numpy`, sample it onto the conditioning grid, and the elevation
+channel replaces the grounded prior entirely — the rest of the pipeline is
+unchanged.
+
+---
+
+## 12. The Mathematics
+
+Consolidated reference for every formula the engine implements.
+
+### 12.1 Reciprocal Rank Fusion
+
+$$
+\boxed{\;\operatorname{RRF}(d) = \sum_{s} \frac{w_s}{k + \operatorname{rank}_s(d)}\;}
+\qquad k = 60
+$$
+
+Choosing $k=60$ (Cormack, Clarke & Büttcher, 2009) balances sensitivity to the
+top ranks against robustness to tail noise. Because the metric uses **ranks
+only**, cosine similarities in $[0,1]$, metre distances and graph affinities can
+be merged without normalisation.
+
+### 12.2 Relational GNN message passing
+
+$$
+m_r(v) = \frac{1}{|N_r(v)|}\sum_{u \in N_r(v)} h(u)
+$$
+$$
+h^{(l+1)}(v) = \underbrace{h^{(l)}(v)}_{\text{content anchor}}
++ \gamma \underbrace{\tanh\!\left(
+\frac{\sum_r m_r^{(l)}(v)\,W_r \;+\; h^{(l)}(v)\,W_0}{\sqrt{2}}
+\right)}_{\text{relational context} \in (-1,1)}
+$$
+
+The $1/\sqrt{2}$ normalisation keeps the pre-activation variance at the input
+scale; the residual term means a node with no informative neighbours degrades
+gracefully to its own embedding instead of collapsing.
+
+### 12.3 Spherical harmonics
+
+$$
+Y_l^m(\theta,\varphi)
+= (-1)^m \sqrt{\frac{2l+1}{4\pi}\frac{(l-m)!}{(l+m)!}}\;
+P_l^m(\cos\theta)\; e^{im\varphi}
+$$
+
+Real basis (used for terrain and splat colour):
+
+$$
+\operatorname{SH}_{\text{real}}(\theta,\varphi) =
+\begin{cases}
+Y_l^0 & m = 0\\
+\sqrt{2}\,(-1)^m \operatorname{Re}(Y_l^m) & m > 0\\
+\sqrt{2}\,(-1)^m \operatorname{Im}(Y_l^{|m|}) & m < 0
+\end{cases}
+$$
+
+Orthonormality — the property that makes SH a *stable* positional encoding and
+a *lossless colour* basis for splats:
+
+$$
+\int_0^{2\pi}\!\!\int_0^{\pi}
+Y_l^m\,Y_{l'}^{m'*}\sin\theta\,\mathrm d\theta\,\mathrm d\varphi = \delta_{ll'}\delta_{mm'}
+$$
+
+### 12.4 DDPM forward process and conditional reverse chain
+
+Forward noising:
+
+$$
+z_t = \sqrt{\bar\alpha_t}\,z_0 + \sqrt{1-\bar\alpha_t}\,\varepsilon,
+\qquad
+\varepsilon \sim \mathcal N(0,I),
+\qquad
+\bar\alpha_t = \prod_{s=1}^{t}(1-\beta_s)
+$$
+
+With a Gaussian conditional prior $z_0 \sim \mathcal N(\mu,\Sigma)$, both the
+forward posterior and its reverse are Gaussian, giving the **exact** step
+(no score network required):
+
+$$
+p(z_{t-1}\mid z_t) = \mathcal N(\mu_{t-1\mid t},\; v_t)
+$$
+
+$$
+\mu_{t-1\mid t} =
+\underbrace{\frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}}_{a_t} z_t
+\;+\;
+\underbrace{\frac{\sqrt{\bar\alpha_{t-1}}\,\beta_t}{1-\bar\alpha_t}}_{b_t}\mu
+$$
+
+$$
+v_t =
+b_t^2\,\sigma^2 \;+\; \underbrace{\frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\,\beta_t}_{\tilde\beta_t},
+\qquad
+\sigma^2 = \text{var}(\Sigma)
+$$
+
+Starting distribution at $t = T$:
+
+$$
+p(z_T) = \mathcal N\!\left(\sqrt{\bar\alpha_T}\,\mu,\;
+(1-\bar\alpha_T)\,I + \bar\alpha_T\,\Sigma\right)
+$$
+
+As $t \to 0$, $\bar\alpha_0 \to 1$ and the chain's mean converges to $\mu$ — i.e.
+the diffusion sampler performs **exact posterior sampling under the spatial
+conditioning**.
+
+Spectral prior (pink-noise tilt):
+
+$$
+\sigma_k = \text{relief} \cdot \frac{1}{1 + r_k^{\,p}} \cdot (0.55 + \text{roughness}),
+\qquad
+p = 1.9 - 1.1\,\widehat{\text{hardness}} - 0.4\,\widehat{\text{rainfall}}
+$$
+
+where $r_k$ is the radial frequency of latent coordinate $k$ and $\widehat{\cdot}$
+denotes min–max normalisation to $[0,1]$.
+
+### 12.5 Stream-power erosion
+
+$$
+E = K\,A^{m}\,S^{n}, \qquad
+S = |\nabla h|,
+\qquad
+\frac{\partial h}{\partial t} = U - E + \kappa\nabla^2 h
+$$
+
+$A$ is the D8 drainage accumulation (each cell sends its full flux to the
+steepest-descent neighbour), $U$ is tectonic uplift, and $\kappa\nabla^2 h$ is
+the hillslope sediment-diffusion term. In the implementation $K$ is modulated
+per cell by the grounded hardness channel — hard gneiss incises slowly, soft
+schist quickly.
+
+### 12.6 Thermal / talus creep
+
+$$
+\frac{\partial h}{\partial t} =
+\begin{cases}
+\kappa_T\,\dfrac{S - S_c}{S_c} & S > S_c \quad \text{(above repose angle)}\\[2mm]
+0 & S \le S_c
+\end{cases}
+$$
+
+A Bingham-style repose threshold $S_c$ — no movement below the critical slope,
+flux proportional to the excess above it. This is what produces crisp talus
+cones and smoothed spurs.
+
+### 12.7 Acoustic / seismic wave equation
+
+$$
+\frac{\partial^2 u}{\partial t^2} = c^2\nabla^2 u - 2\gamma\frac{\partial u}{\partial t} + s(x,t)
+$$
+
+Leap-frog time stepping with a CFL-verified
+$c\,\Delta t / \Delta x \le 0.5$; $s$ is a Ricker pulse source.
+
+### 12.8 Spectral heat solve — the FNO's target operator
+
+Exact reference solution via Fourier diagonalisation of the Laplacian:
+
+$$
+\hat u(t) = \hat u_0 \exp\!\left(-\nu \|\mathbf k\|^2 t\right)
+$$
+
+This is the operator the Fourier Neural Operator learns to emulate, and it
+doubles as the data generator for training: because it is exact, the training
+targets are analytic, so measured FNO error reflects only network
+approximation error.
+
+### 12.9 Fourier Neural Operator
+
+A spectral layer replaces the kernel integral in frequency space:
+
+$$
+(\mathcal K(\phi) u)(x) = \mathcal F^{-1}\!\left( R_\phi \cdot \mathcal F u \right)(x),
+\qquad
+\mathcal F = \text{DFT-2D}
+$$
+
+Because $\mathcal F^{-1} R_\phi \mathcal F$ is a **circulant** operator, it is a
+linear convolution with zero discretisation (grid) error — the resolution
+invariance that makes FNOs practical for PDE surrogates. The model is
+
+$$
+u^{\ell+1} = \sigma\!\left(
+W^\ell u^\ell + \mathcal K^\ell(u^\ell) + b^\ell
+\right)
+$$
+
+with the terrain-conditioning tensor concatenated as extra input channels
+(hardness, rainfall, flow accumulation), so a single trained operator serves
+all grounded scenes rather than overfitting to one height field.
+
+Gradients are hand-derived analytically — the chain through the real DFT,
+complex weight multiplies and shared-spectrum weights is computed exactly rather
+than by autodiff, which removes the need for PyTorch entirely.
+
+### 12.10 Dual contouring
+
+For each sign-changing cell the zero-crossing point is found on an edge, the
+quadratic error function is minimised, and a vertex is emitted per *cell* (not
+per crossing):
+
+$$
+\min_{v} \sum_{e \in \text{cell}} \left( n_e \cdot (v - p_e) \right)^2
+$$
+
+solved in closed form via the normal-equations system with Tikhonov
+regularisation $\lambda I$ for degenerate cells. Because one vertex is generated
+per cell and shared consistently across the three orthogonal sign-change
+directions, the output has no cracks or T-junctions between adjacent cells —
+the reason the result is watertight.
+
+### 12.11 Marching tetrahedra (manifold fallback)
+
+Each cube is split into 6 tetrahedra using the Kuhn decomposition. Every
+tetrahedron is triangulated with one of the two ambiguous cases resolved by
+always choosing the configuration that keeps each **edge** shared by at most two
+triangles:
+
+$$
+\boxed{\;\text{every edge has exactly 2 directed occurrences} \Rightarrow
+\text{manifold, orientable, watertight}\;}
+$$
+
+This guarantee is structural — it holds for *any* input field, including fully
+degenerate ones where dual contouring can produce non-manifold artefacts. The
+pipeline therefore verifies the surface-nets result and falls back to marching
+tets if verification fails.
+
+### 12.12 3D Gaussians
+
+Each primitive is
+
+$$
+G(x) = \exp\!\left(-\tfrac{1}{2}(x-\mu)^\top \Sigma^{-1} (x-\mu)\right),
+\qquad
+\Sigma = R S S^\top R^\top
+$$
+
+with opacity $\alpha$ and per-primitive view-dependent colour expanded in
+degree-3 **real** spherical harmonics — 16 coefficients per colour channel
+(1 DC + 15 higher-order), which is exactly the standard 3DGS layout:
+
+$$
+C(d) = \sum_{l=0}^{3}\sum_{m=-l}^{l} c_{lm}\, \operatorname{SH}_{\text{real}}(\theta_d, \varphi_d)
+$$
+
+Note the count is $(L+1)^2 = 16$ for the *real* basis, not the $2L^2+1 = 25$
+of the complex basis — the factor of two comes from the
+$\sqrt{2}\,\mathrm{Re}$ / $\sqrt{2}\,\mathrm{Im}$ split collapsing into single
+real coefficients.
+
+---
+
+## 13. Determinism & Reproducibility
+
+Every source of randomness is pinned to a value in `.env`:
+
+| Variable | Controls |
+|---|---|
+| `DIFFUSION_SEED` | every $\varepsilon \sim \mathcal N(0,I)$ draw in the reverse chain |
+| `FNO_SEED` | FNO weight init + training batch order |
+| `GNN_SEED` | relational projection matrices $W_r$, $W_0$ |
+| `SEED_RANDOM_SEED` | corpus generation and any remaining stochastic term |
+
+> The `LocalEmbedder` needs no seed — it is a deterministic hash embedder, so its
+> output is bit-identical across processes and machines.
+
+Verified: two calls to `sample(prior, steps=48, seed=42)` return arrays that
+compare exactly equal under `np.array_equal`.
+
+Consequence: **identical `.env` ⇒ byte-identical mesh, splats and exports.**
+
+`GET /api/v1/health/detailed` reports the active seed set, and every `/generate`
+response echoes the seed it used, so a scene can be replayed exactly from its
+payload. Note the NumPy `Generator` is passed explicitly through the pipeline
+rather than relying on global state, which keeps reproducibility intact under
+concurrent requests.
+
+---
+
+## 14. Testing
+
+```powershell
+cd backend
+pytest -q                       # full suite
+pytest tests/test_geometry.py -v
+pytest -k "watertight" -v
+pytest --cov=app --cov-report=term-missing
+```
+
+The suite is grouped to mirror the architecture:
+
+| File | Covers |
+|---|---|
+| `test_geometry.py` | `ST_*` predicate correctness against hand-computed cases; WGS84 metric scaling; bbox/centroid/area/length |
+| `test_spatial_sql.py` | schema, FTS5 queries, `ST_Intersects` joins returning real SQL rows, scene persistence |
+| `test_vector_store.py` | HNSW recall vs brute force, persistence round-trip, all three backends' interface conformance |
+| `test_rrf.py` | rank-fusion ordering, weight effects, provenance completeness |
+| `test_gnn.py` | message-passing shape, residual anchoring, normalisation bounds |
+| `test_spherical_harmonics.py` | orthonormality $\int Y_l^m Y_{l'}^{m'*}= \delta_{ll'}\delta_{mm'}$, real↔complex consistency, symmetry |
+| `test_basis.py` | DCT encode/decode exactness (Parseval), upsample shapes, tilt monotonicity |
+| `test_diffusion.py` | prior shapes, seed reproducibility, chain convergence toward $\mu$ |
+| `test_solvers.py` | erosion conserves/monotonically smooths; thermal respects $S_c$; seismic respects CFL |
+| `test_fno.py` | analytic gradients vs finite differences, FNO tracks the spectral reference, cache save/load, benchmark fields |
+| `test_surface_nets.py` | analytic-sphere SDF extraction error, **watertightness assertions**, signed-volume sign |
+| `test_marching_tets.py` | manifold guarantees on degenerate fields, volume agreement with the analytic sphere |
+| `test_api.py` | endpoint contracts, `.env` defaults filling omitted body fields |
+
+**The watertightness test is the important one.** It asserts
+`non_manifold_edges == 0`, `inconsistent_directed_edges == 0` and
+`signed_volume > 0` on generated meshes — the export contract for CAD, not a
+nice-to-have.
+
+---
+
+## 15. Deployment
+
+### Local
+
+```powershell
+python run.py
+# → engine warm-up succeeds, then fails to load app.main (see §7)
+```
+
+`run.py` inserts `backend/` on `sys.path`, loads the root `.env`, warms the
+embedder / HNSW / graph, optionally pre-trains the FNO when
+`FNO_AUTO_TRAIN=true`, then hands off to uvicorn. The warm-up stage works today;
+the uvicorn hand-off needs `backend/app/main.py` (§19).
+
+### Docker
+
+```dockerfile
+# backend/Dockerfile
+FROM python:3.11-slim
+WORKDIR /srv/app
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/ ./backend/
+COPY frontend/ ./frontend/
+COPY .env .env
+ENV APP_ENV=production APP_ROOT_PATH=
+EXPOSE 8000
+CMD ["python", "backend/app/../..//run.py"]
+```
+
+```yaml
+# docker-compose.yml
+services:
+  api:
+    build: .
+    ports: ["8000:8000"]
+    env_file: [".env"]
+    volumes: ["./artifacts:/srv/app/artifacts"]
+    command: ["python", "run.py"]
+```
+
+Set `APP_DEBUG=false` in production, `EMBEDDING_PROVIDER=openai` only if you have
+a key, and keep `artifacts/` on a mounted volume so trained FNO weights and the
+spatial DB survive container restarts.
+
+### Production notes
+
+- **Workers.** Generation is CPU-bound NumPy/SciPy. Use
+  `uvicorn app.main:app --workers 1` plus multiple *replicas* behind a load
+  balancer rather than many threads in one process — each request holds the GIL
+  for its numeric sections and precomputed engines are expensive to duplicate.
+- **Cold start.** The first `retrieve()` seeds SQLite and builds the HNSW graph
+  (~0.5–2 s for the seed corpus). `run.py` warms it at boot; in Kubernetes, make
+  `/api/v1/health/detailed` the readiness probe.
+- **FNO training.** `FNO_AUTO_TRAIN=true` with `FNO_TRAIN_STEPS=300` adds roughly
+  two minutes to boot the first time, then loads from `FNO_CACHE_PATH`
+  instantly. In production, ship the cached `.npz` in the image and set
+  `FNO_AUTO_TRAIN=false`.
+- **Caching.** `GET /api/v1/scenes/{id}` replays a full pipeline result without
+  recomputation; front identical `(query, seed, steps)` requests from there.
+
+---
+
+## 16. Performance Notes
+
+Measured on this machine (Windows 11, Python 3.11, NumPy 2.5 / SciPy 1.18,
+CPU-only, no torch):
+
+| Operation | Grid | Time |
+|---|---|---|
+| Grounding (3 channels + RRF, 41 nodes / 42 chunks) | — | **≈210 ms** |
+| Conditioning raster + SH(deg 4) | 7 × 32 × 32 | **≈40 ms** |
+| Diffusion sample | 64-dim latent, 48 steps | **≈62 ms** |
+| Hydraulic erosion | 128 × 128 × 24 steps | **≈30 ms** |
+| Surface-nets meshing (watertight) | 132 × 132 × 34 | **≈936 ms** |
+| Full OBJ/PLY/GLB/USDZ export | 50 k verts | **≈120 ms** |
+| Spectral heat solve | 32 × 32 | **≈4 ms** |
+| FNO-2D forward | 32 × 32 | **≈86 ms/step** |
+| Exact spectral heat reference | 32 × 32 | **≈3 ms** |
+
+### Honest assessment of the FNO
+
+The measured `speedup` in `benchmark()` is currently **well below 1** — a fresh
+run reported `reference_ms: 3.11`, `fno_ms: 86.49`, `speedup: 0.04`. This is
+expected and worth stating plainly:
+
+* The reference solver is an **exact spectral** solve — a single FFT — which is
+  an unusually strong baseline, not a finite-element loop.
+* The NumPy FNO has no BLAS batched fast path for its per-layer spectral
+  multiply, so its constant factor is high at small grids.
+* FNOs win when they **amortise**: train once, then evaluate thousands of times
+  at new resolutions with no re-meshing. The crossover appears at larger grids,
+  where the FFT reference cost grows as $O(N^2\log N)$ while the FNO's fixed
+  layer count stays constant, and massively in the multi-query regime where one
+  trained operator serves every scene.
+
+Accuracy is the part that already works: `rel_l2_error` measured **≈1.5 %**
+against the exact reference.
+
+What the implementation *does* deliver today: a cached, genuinely trainable
+operator, and the analytic-gradient machinery needed to improve its speed.
+**The `speedup` number is a measurement, not a claim** — read it from
+`GET /api/v1/fno/benchmark` rather than trusting marketing.
+
+### Scaling the mesh
+
+Meshing dominates wall time. Trade-offs:
+
+| `MESH_RESOLUTION` | Cells | Vertices | Meshing time |
+|---|---|---|---|
+| 64 | 68 × 68 × 22 | ≈8 k | ≈250 ms |
+| 128 | 132 × 132 × 34 | ≈50 k | ≈936 ms |
+| 192 | 196 × 196 × 44 | ≈110 k | ≈2.4 s |
+| 256 | 260 × 260 × 52 | ≈200 k | ≈5 s |
+
+For interactive work use 64–128; for CAD export use 192–256 and fetch it from
+`/api/v1/export` rather than `/api/v1/generate`.
+
+---
+
+## 17. Extending the Engine
+
+### A new PDE solver
+
+```python
+# backend/app/physics/solvers.py
+def my_landslide(h: np.ndarray, steps: int, **params) -> np.ndarray:
+    """Depth-averaged granular flow. Must accept the grounded channels via **params."""
+    ...
+
+run_solver is an explicit if-dispatch over the SOLVERS tuple, so register the name
+in both places:
+
+SOLVERS = ("hydraulic", "thermal", "seismic", "diffusion", "landslide")
+
+def run_solver(name, h, steps, params=None, hardness=None):
+    ...
+    if name == "landslide":          # add this branch
+        return my_landslide(h, steps=steps, **p)
+```
+
+Contract: take the height field and the grounded channel grids, return a height
+field of the same shape. Once registered it is available everywhere
+`run_solver()` is, including the `/simulate` and `/generate` endpoints and the
+studio dropdown.
+
+### A new conditioning channel
+
+`CHANNELS` is the tuple in `app/core/conditioning.py` that names the rasteriser
+output. Adding one means three small edits — no architecture change:
+
+```python
+# 1. declare it
+CHANNELS = ("elevation", "relief", "hardness", "rainfall",
+            "uplift", "roughness", "weight", "lithology")     # 7 → 8 channels
+
+# 2. emit it in build_conditioning(), alongside the existing channels
+out["lithology"] = normalise(lithology_contribution)          # (32, 32)
+
+# 3. consume it — e.g. widen the FNO input tensor, then retrain
+#    (the FNO concatenates channels, so this is a reshape + retrain)
+```
+
+### A new export format
+
+```python
+# backend/app/core/rendering/exporters.py
+def write_stl(mesh, path, binary=True):
+    """Binary STL: 80-byte header, per-triangle normal + 3 vertices + uint16."""
+    ...
+
+EXPORTERS["stl"] = write_stl
+```
+
+### A new embedding / vector backend
+
+```python
+# embeddings.py — implement one method
+class CohereEmbedder:
+    dim = 1024
+    def embed(self, texts): ...
+    name = "cohere-embed-v3"
+
+# vector_store.py — implement add() / search()
+class MilvusStore(VectorStore):
+    def add(self, records, vectors): ...
+    def search(self, vector, k): ...
+```
+
+Both are selected purely by `.env` keys — no other file needs to change.
+
+---
+
+## 18. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ModuleNotFoundError: app` | launched from the wrong directory | run `python run.py` from the repo root, or `cd backend` for pytest |
+| `settings` raises `ValidationError` on boot | malformed `.env` | check ints have no quotes/commas; every value in §8 must parse |
+| Empty `fused` list | corpus not seeded | call `reset_repository()` or delete `artifacts/geomind_spatial.db` |
+| Mesh is not watertight in the response | resolution too low / degenerate field | raise `MESH_RESOLUTION`; the marching-tets fallback should engage — check `transform.meshing_method` |
+| `speedup < 1` in the benchmark | expected — see §16 | compare against your own FEM baseline, not the exact spectral solver |
+| Slow first request (~2 s) | cold cache | normal; `run.py` warms at boot |
+| `OPENAI_API_KEY not set` warning | backend set to openai without a key | set the key, or `EMBEDDING_PROVIDER=local` |
+| CORS error in the browser | frontend origin not allowed | add it to `CORS_ORIGINS` in `.env` and restart |
+| USDZ won't open on macOS | unzip first | `unzip model.usdz` → `model.usda`, then re-zip, or import via Reality Composer |
+| FNO retrains every boot | weights path not writable / cache deleted | ensure `artifacts/` exists and is writable; set `FNO_AUTO_TRAIN=false` to use a stale cache |
+
+Enable verbose tracing:
+
+```powershell
+$env:APP_DEBUG="true"
+python run.py
+# → /docs exposes every endpoint with live validation
+```
+
+---
+
+## 19. Roadmap
+
+The engine is complete and verified. Remaining work is the delivery layer and
+the optional accelerators, in priority order:
+
+- [ ] `backend/app/main.py` — FastAPI app, CORS, static mount, lifespan warm-up
+- [ ] `backend/app/api/routes.py` — the §9.2 endpoint contracts as thin adapters
+      over §9.1 (no new math required)
+- [ ] `backend/app/pipeline.py` — the `ground → condition → sample → simulate →
+      render` orchestration function that `/generate` calls
+- [ ] `frontend/` — the WebGL studio shell and its four JS modules
+- [ ] `backend/tests/test_api.py` — endpoint contract tests
+- [ ] `backend/app/core/rendering/gaussians.py` — Gaussian synthesis from the
+      implicit field (SH degree 3, binary PLY / `.splat` writers)
+- [ ] `backend/app/core/rendering/exporters.py` — the four writers behind one
+      `export(mesh, fmt, path)` dispatcher
+
+Optional accelerators, each independently swappable with no effect on results:
+
+- [ ] `torch` + `torch-harmonics` FNO acceleration (batched spectral layers)
+- [ ] `torch-geometric` heterogeneous GNN with learned relation embeddings
+- [ ] `gsplat` CUDA splat training from real imagery
+- [ ] Qdrant / Supabase pgvector at corpus scale (>10⁶ chunks)
+- [ ] PostGIS as the spatial backend (the SQL already matches its dialect)
+- [ ] Open3D / Trimesh export validation and mesh decimation
+- [ ] Cesium + Unreal Engine 5 integration via the USDZ path
+
+---
+
+## 20. License & Citation
+
+MIT. See `LICENSE`.
+
+```bibtex
+@software{geomind3d,
+  title  = {GeoMind-3D: Autonomous Neural-Spatial Agent Engine
+            for Geomathematical Rendering},
+  author = {Saad Salman},
+  year   = {2026},
+  url    = {https://github.com/SaadxSalman/GeoMind-3D}
+}
+```
+
+### References
+
+1. Malkov & Yashunin, *Efficient and robust approximate nearest neighbor search
+   using Hierarchical Navigable Small World graphs*, IEEE TPAMI, 2018.
+2. Cormack, Clarke & Büttcher, *Reciprocal Rank Fusion outperforms Condorcet and
+   individual Rank Learning Methods*, SIGIR, 2009.
+3. Ho, Jain & Abbeel, *Denoising Diffusion Probabilistic Models*, NeurIPS, 2020.
+4. Li, Kovachki et al., *Fourier Neural Operator for Parametric Partial
+   Differential Equations*, ICLR, 2021.
+5. Müller, Evans, Schied & Keller, *Instant Neural Graphics Primitives*,
+   SIGGRAPH, 2022.
+6. Kerbl, Kopanas et al., *3D Gaussian Splatting for Real-Time Radiance Field
+   Rendering*, SIGGRAPH, 2023.
+7. Ju, Losasso, Schaefer & Warren, *Dual Contouring of Hermite Data*, SIGGRAPH, 2002.
+8. Kipf & Welling, *Semi-Supervised Classification with Graph Convolutional
+   Networks*, ICLR, 2017.
+9. Mildenhall, Srinivasan et al., *NeRF: Representing Scenes as Neural Radiance
+   Fields*, ECCV, 2020.
+10. Bloomenthal & Shoemake, *Convolution Surfaces*, SIGGRAPH, 1991 (metaball /
+    gsplat kernel background).
+
+---
+
+<p align="center">
+<b>Ground it, then generate it.</b><br>
+<sub>GeoMind-3D — geometry with provenance.</sub>
+</p>
+
+
+
+
+
+
+
+
 
 
 

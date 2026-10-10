@@ -5,9 +5,14 @@
 # ═══════════════════════════════════════════════════════════
 
 # ── Secrets ──
+# The master .env holds every key/token and must NEVER be committed.
+# There is intentionally NO .env.example in this repository.
 .env
 .env.*
-!.env.example
+.envrc
+secrets.*
+*.pem
+*.key
 
 # ── Python ──
 __pycache__/
